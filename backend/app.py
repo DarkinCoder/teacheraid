@@ -6,6 +6,8 @@ from uuid import uuid4
 from schemas import (
     CreateQuestionRequest,
     CreateQuestionResponse,
+    GenerateQuestionRequest,
+    GenerateQuestionResponse,
     StudentSubmissionRequest,
     StudentSubmissionResponse,
     ClassificationResult,
@@ -30,8 +32,18 @@ from memory_service import update_memories, get_student_memories, get_class_memo
 from teacher_insights import summarize_class_memories, summarize_student_memories
 from moorcheh_memory import upload_memory_record, search_memory
 from embeddings import get_embedding
+from fastapi.middleware.cors import CORSMiddleware
+from llm_question_generator import generate_ai_question
 
 app = FastAPI(title="Teacher-AIde Backend")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # fine for hackathon/testing
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def root():
@@ -190,3 +202,36 @@ def embeddings_debug():
         "length": len(vector),
         "first_10": vector[:10]
     }
+
+@app.post("/questions/generate", response_model=GenerateQuestionResponse)
+def generate_question(payload: GenerateQuestionRequest):
+    generated = generate_ai_question(
+        concept=payload.concept,
+        difficulty=payload.difficulty,
+        question_type=payload.question_type,
+    )
+
+    question_id = f"q_{uuid4().hex[:8]}"
+
+    question_data = {
+        "question_id": question_id,
+        "teacher_id": payload.teacher_id,
+        "classroom_id": payload.classroom_id,
+        "concept": payload.concept,
+        "prompt": generated["prompt"],
+        "code_snippet": generated["code_snippet"],
+        "correct_answer": generated["correct_answer"],
+        "target_misconception": generated["target_misconception"],
+    }
+
+    questions_store[question_id] = question_data
+
+    return GenerateQuestionResponse(
+        question_id=question_id,
+        concept=payload.concept,
+        prompt=generated["prompt"],
+        code_snippet=generated["code_snippet"],
+        correct_answer=generated["correct_answer"],
+        target_misconception=generated["target_misconception"],
+        message="AI-generated question created successfully",
+    )
