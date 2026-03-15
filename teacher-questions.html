@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Questions — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="app-layout" id="root"></div>
+  <script src="config.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    async function render() {
+      document.getElementById('root').innerHTML = buildSidebar('questions') + `
+        <div class="main">
+          <div class="topbar">
+            <div>
+              <div class="topbar-title">Question Bank</div>
+              <div class="topbar-sub" id="qCount">Loading…</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <a href="teacher-create-question.html" class="btn btn-secondary">✏️ Create</a>
+              <a href="teacher-generate-question.html" class="btn btn-primary">✨ Generate with AI</a>
+            </div>
+          </div>
+          <div class="page-content animate-in">
+            <div id="alertBox"></div>
+            <div class="card" id="tableCard">
+              <div class="empty-state"><div class="spinner spinner-dark"></div><div class="empty-state-sub" style="margin-top:12px;">Loading questions…</div></div>
+            </div>
+          </div>
+        </div>`;
+
+      try {
+        const data = await apiGet('/questions');
+        const questions = data.questions || [];
+        const activeId  = getActiveQuestionId();
+        document.getElementById('qCount').textContent = `${questions.length} question${questions.length!==1?'s':''} total`;
+
+        if (questions.length === 0) {
+          document.getElementById('tableCard').innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">❓</div>
+              <div class="empty-state-title">No questions yet</div>
+              <div class="empty-state-sub">Create your first question manually or generate one with AI.</div>
+              <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
+                <a href="teacher-create-question.html" class="btn btn-secondary">Create manually</a>
+                <a href="teacher-generate-question.html" class="btn btn-primary">Generate with AI ✨</a>
+              </div>
+            </div>`;
+          return;
+        }
+
+        document.getElementById('tableCard').innerHTML = `
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr>
+                <th>Question Prompt</th>
+                <th>Concept</th>
+                <th>Correct Answer</th>
+                <th>Active</th>
+              </tr></thead>
+              <tbody>
+                ${questions.map(q => `
+                <tr>
+                  <td>
+                    <div style="font-weight:500;">${escHtml(q.prompt)}</div>
+                    ${q.code_snippet ? `<pre style="margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;">${escHtml(q.code_snippet)}</pre>` : ''}
+                    <div class="cell-muted" style="margin-top:4px;font-size:0.72rem;">ID: ${q.question_id}</div>
+                  </td>
+                  <td><span class="badge badge-blue">${escHtml(q.concept||'—')}</span></td>
+                  <td class="cell-muted">${escHtml(q.correct_answer||'—')}</td>
+                  <td>
+                    ${q.question_id === activeId
+                      ? '<span class="badge badge-green">● Active</span>'
+                      : `<button class="btn btn-sm btn-ghost" onclick="setActive('${q.question_id}')">Set Active</button>`}
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      } catch(e) {
+        document.getElementById('qCount').textContent = 'Error loading';
+        document.getElementById('tableCard').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <div class="empty-state-title">Backend unreachable</div>
+            <div class="empty-state-sub">Make sure the backend is running at ${API_BASE}</div>
+          </div>`;
+      }
+    }
+
+    function setActive(id) {
+      setActiveQuestionId(id);
+      document.getElementById('alertBox').innerHTML = `<div class="alert alert-success">✓ Question set as active. Students will now see this question.</div>`;
+      render();
+    }
+
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    render();
+  </script>
+</body>
+</html>

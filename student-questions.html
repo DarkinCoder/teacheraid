@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Question — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="student-page" id="app">
+    <div class="student-card-wrap">
+      <div class="student-card-header">
+        <div class="student-card-logo">
+          <div class="student-card-logo-img"><img src="images/logo.png" alt="TeacherAId"/></div>
+          <div class="student-card-logo-text">TeacherAId</div>
+        </div>
+      </div>
+      <div class="student-card-body">
+        <div class="empty-state" style="padding:48px 24px;">
+          <div class="spinner spinner-dark" style="width:30px;height:30px;margin:0 auto 12px;"></div>
+          <div class="empty-state-sub">Loading your question…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const studentId   = localStorage.getItem('currentStudent') || '';
+    const teacher     = localStorage.getItem('currentTeacher') || '';
+    const classroomId = localStorage.getItem('currentClassroom') || ('cls_' + teacher.toLowerCase().replace(/\s+/g,'_'));
+
+    if (!studentId || !teacher) window.location.href = 'student-registration.html';
+
+    let activeQuestion    = null;
+    let answeredIds       = JSON.parse(localStorage.getItem('answered_' + studentId) || '[]');
+
+    async function init() {
+      try {
+        const data      = await apiGet('/questions');
+        const questions = data.questions || [];
+
+        if (questions.length === 0) {
+          renderMsg('No questions available yet.', 'Your teacher hasn\'t created any questions. Check back soon!');
+          return;
+        }
+
+        // Find next unanswered question (prefer teacher's active one first)
+        const activeId = getActiveQuestionId();
+        let target = questions.find(q => q.question_id === activeId && !answeredIds.includes(q.question_id));
+        if (!target) target = questions.find(q => !answeredIds.includes(q.question_id));
+        if (!target) {
+          renderMsg('All done! 🎉', 'You\'ve answered all available questions. Great work!');
+          return;
+        }
+
+        activeQuestion = target;
+        const answered  = answeredIds.length;
+        const total     = questions.length;
+        renderQuestion(answered, total);
+      } catch(e) {
+        renderMsg('Connection error', 'Cannot reach the backend server. Please ask your teacher to check it.');
+      }
+    }
+
+    function renderMsg(title, sub) {
+      document.getElementById('app').innerHTML = `
+        <div class="student-card-wrap">
+          <div class="student-card-header">
+            <div class="student-card-logo">
+              <div class="student-card-logo-img"><img src="images/logo.png" alt="TeacherAId"/></div>
+              <div class="student-card-logo-text">TeacherAId</div>
+            </div>
+            <div class="student-badge">${escHtml(studentId)}</div>
+          </div>
+          <div class="student-card-body">
+            <div class="empty-state" style="padding:48px 24px;">
+              <div class="empty-state-title">${escHtml(title)}</div>
+              <div class="empty-state-sub">${escHtml(sub)}</div>
+              <a href="student-registration.html" class="btn btn-ghost" style="margin-top:16px;">← Sign out</a>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderQuestion(answered, total) {
+      const q = activeQuestion;
+      document.getElementById('app').innerHTML = `
+        <div class="student-card-wrap">
+          <div class="student-card-header">
+            <div class="student-card-logo">
+              <div class="student-card-logo-img"><img src="images/logo.png" alt="TeacherAId"/></div>
+              <div class="student-card-logo-text">TeacherAId</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge badge-blue">Question ${answered+1} of ${total}</span>
+              <span class="student-badge">${escHtml(studentId)}</span>
+            </div>
+          </div>
+          <div class="student-card-body">
+            <div id="alertBox"></div>
+
+            <div class="q-label">Question — ${escHtml(q.concept||'')}</div>
+            <div class="question-box">${escHtml(q.prompt)}</div>
+
+            ${q.code_snippet ? `
+              <div style="margin-bottom:18px;">
+                <div class="q-label" style="margin-bottom:6px;">Code</div>
+                <pre style="background:#1e1d3f;color:#c8c5f8;border-radius:var(--radius);padding:14px 16px;font-size:0.85rem;overflow-x:auto;white-space:pre-wrap;line-height:1.65;">${escHtml(q.code_snippet)}</pre>
+              </div>` : ''}
+
+            <div class="form-group">
+              <label class="form-label">Your Answer</label>
+              <input class="form-input" type="text" id="answerInput" placeholder="Write your answer here…" autocomplete="off"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Your Reasoning</label>
+              <textarea class="form-textarea" id="reasoningInput" rows="4"
+                placeholder="Explain your thinking step by step…"></textarea>
+              <div class="form-hint">Your reasoning helps your teacher understand how you're thinking about this problem.</div>
+            </div>
+
+            <div id="loadingRow" style="display:none;align-items:center;gap:10px;margin-bottom:12px;color:var(--muted);font-size:0.85rem;">
+              <div class="spinner spinner-dark" style="width:18px;height:18px;"></div>
+              Classifying your response…
+            </div>
+          </div>
+          <div class="student-card-footer">
+            <a href="student-registration.html" class="btn btn-ghost">Sign out</a>
+            <button class="btn btn-primary btn-lg" id="submitBtn" onclick="submit()">Submit Answer →</button>
+          </div>
+        </div>`;
+    }
+
+    async function submit() {
+      const answer    = document.getElementById('answerInput').value.trim();
+      const reasoning = document.getElementById('reasoningInput').value.trim();
+      const alertBox  = document.getElementById('alertBox');
+      alertBox.innerHTML = '';
+
+      if (!answer || !reasoning) {
+        alertBox.innerHTML = '<div class="alert alert-error" style="margin-bottom:16px;">Please provide both an answer and your reasoning.</div>';
+        return;
+      }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+      document.getElementById('loadingRow').style.display = 'flex';
+
+      try {
+        const result = await apiPost('/submissions', {
+          student_id:        studentId,
+          question_id:       activeQuestion.question_id,
+          student_answer:    answer,
+          student_reasoning: reasoning
+        });
+
+        // Mark this question as answered locally
+        answeredIds.push(activeQuestion.question_id);
+        localStorage.setItem('answered_' + studentId, JSON.stringify(answeredIds));
+
+        document.getElementById('loadingRow').style.display = 'none';
+        document.getElementById('answerInput').disabled    = true;
+        document.getElementById('reasoningInput').disabled = true;
+
+        const isCorrect = result.is_correct;
+        alertBox.innerHTML = `
+          <div class="alert ${isCorrect ? 'alert-success' : 'alert-error'}" style="margin-bottom:16px;">
+            <div>
+              <div style="font-weight:700;margin-bottom:4px;">${isCorrect ? '✓ Correct!' : '✗ Not quite.'}</div>
+              ${result.misconception ? `<div class="text-sm">Misconception identified: <strong>${escHtml(result.misconception)}</strong></div>` : ''}
+              ${result.reasoning_pattern ? `<div class="text-sm" style="margin-top:4px;">${escHtml(result.reasoning_pattern)}</div>` : ''}
+              ${result.evidence?.length ? `<div class="text-sm" style="margin-top:6px;opacity:.8;">Evidence: ${result.evidence.map(e=>escHtml(e)).join(' · ')}</div>` : ''}
+            </div>
+          </div>`;
+
+        btn.textContent = 'Next Question →';
+        btn.disabled    = false;
+        btn.onclick     = () => init();
+
+      } catch(e) {
+        document.getElementById('loadingRow').style.display = 'none';
+        alertBox.innerHTML = `<div class="alert alert-error" style="margin-bottom:16px;">Submission error: ${e.message}</div>`;
+        btn.disabled    = false;
+        btn.textContent = 'Try Again';
+        btn.onclick     = () => submit();
+      }
+    }
+
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    init();
+  </script>
+</body>
+</html>

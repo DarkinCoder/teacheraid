@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="app-layout" id="root"></div>
+  <script src="config.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    const teacher     = getTeacherId();
+    const classroomId = getClassroomId();
+
+    async function render() {
+      // Render skeleton immediately
+      document.getElementById('root').innerHTML = buildSidebar('dashboard') + `
+        <div class="main">
+          <div class="topbar">
+            <div>
+              <div class="topbar-title">Dashboard</div>
+              <div class="topbar-sub">Welcome back, ${teacher}</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <span class="badge badge-gray" id="backendStatus">Connecting…</span>
+            </div>
+          </div>
+          <div class="page-content animate-in" id="dashContent">
+            <div class="stat-grid">
+              <div class="stat-card"><div class="stat-label">Questions</div><div class="stat-value" id="statQ">—</div><div class="stat-sub">In bank</div></div>
+              <div class="stat-card"><div class="stat-label">Top Misconception</div><div class="stat-value" style="font-size:1rem;" id="statM">—</div><div class="stat-sub" id="statMCount"></div></div>
+              <div class="stat-card"><div class="stat-label">Active Question</div><div class="stat-value" style="font-size:0.85rem;word-break:break-all;" id="statAQ">None</div><div class="stat-sub">Current diagnostic</div></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div class="card">
+                <div class="card-header"><div class="card-title">❓ Questions</div></div>
+                <div class="card-body">
+                  <p class="text-muted text-sm" style="margin-bottom:16px;">Create manual questions or generate them with AI. The active question is sent to all students.</p>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <a href="teacher-questions.html" class="btn btn-primary">View All</a>
+                    <a href="teacher-create-question.html" class="btn btn-secondary">Create</a>
+                    <a href="teacher-generate-question.html" class="btn btn-ghost">Generate ✨</a>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><div class="card-title">👥 Students</div></div>
+                <div class="card-body">
+                  <p class="text-muted text-sm" style="margin-bottom:16px;">View AI-classified submissions, misconceptions, and reteach suggestions from the backend.</p>
+                  <div style="display:flex;gap:8px;">
+                    <a href="teacher-students.html" class="btn btn-primary">View Students</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;" id="insightsCard" style="display:none;">
+              <div class="card-header">
+                <div class="card-title">📊 Class Insights</div>
+                <a href="teacher-students.html" class="btn btn-sm btn-ghost">Full view →</a>
+              </div>
+              <div class="card-body" id="insightsBody">
+                <div class="text-muted text-sm">Loading class insights…</div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      // Check backend health
+      try {
+        const health = await apiGet('/');
+        document.getElementById('backendStatus').textContent = '● Backend connected';
+        document.getElementById('backendStatus').className = 'badge badge-green';
+      } catch(e) {
+        document.getElementById('backendStatus').textContent = '● Backend offline';
+        document.getElementById('backendStatus').className = 'badge badge-red';
+      }
+
+      // Load questions count
+      try {
+        const data = await apiGet('/questions');
+        const qs = data.questions || [];
+        document.getElementById('statQ').textContent = qs.length;
+
+        // Show active question id
+        const aqId = getActiveQuestionId();
+        if (aqId) {
+          const aq = qs.find(q => q.question_id === aqId);
+          document.getElementById('statAQ').textContent = aq ? aq.prompt.slice(0,40)+'…' : aqId;
+        }
+      } catch(e) { document.getElementById('statQ').textContent = '?'; }
+
+      // Load class insights
+      try {
+        const data = await apiGet(`/insights/class/${classroomId}`);
+        document.getElementById('insightsCard').style.display = '';
+
+        const top = (data.top_misconceptions || [])[0];
+        if (top) {
+          document.getElementById('statM').textContent = top.misconception?.slice(0,30) + (top.misconception?.length > 30 ? '…' : '');
+          document.getElementById('statMCount').textContent = `${top.count} student${top.count!==1?'s':''} · ${top.trend||''}`;
+        }
+
+        const reteach = (data.suggested_reteach_topics || []);
+        document.getElementById('insightsBody').innerHTML = `
+          ${data.teacher_summary ? `<p class="text-sm" style="margin-bottom:14px;line-height:1.65;">${escHtml(data.teacher_summary)}</p>` : ''}
+          ${reteach.length ? `
+            <div style="font-size:0.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Suggested Reteach Topics</div>
+            ${reteach.map(r => `<div style="padding:8px 12px;background:var(--accent-soft);border-radius:var(--radius-sm);margin-bottom:6px;font-size:0.85rem;color:var(--text);">${escHtml(r)}</div>`).join('')}
+          ` : ''}
+        `;
+      } catch(e) {
+        document.getElementById('insightsCard').style.display = '';
+        document.getElementById('insightsBody').innerHTML = '<div class="text-muted text-sm">No class data yet — create a question and collect student submissions first.</div>';
+      }
+    }
+
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    render();
+  </script>
+</body>
+</html>

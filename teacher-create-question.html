@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Create Question — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="app-layout" id="root"></div>
+  <script src="config.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    document.getElementById('root').innerHTML = buildSidebar('create') + `
+      <div class="main">
+        <div class="topbar">
+          <div>
+            <div class="topbar-title">Create Question</div>
+            <div class="topbar-sub">Write a diagnostic question and add it to the question bank</div>
+          </div>
+        </div>
+        <div class="page-content animate-in">
+          <div style="max-width:680px;">
+            <div class="card">
+              <div class="card-header"><div class="card-title">✏️ New Question</div></div>
+              <div class="card-body">
+                <div id="alertBox"></div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">Concept / Topic</label>
+                    <input class="form-input" type="text" id="concept" placeholder="e.g. loops, conditionals, variables"/>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Correct Answer</label>
+                    <input class="form-input" type="text" id="correct_answer" placeholder="The model answer"/>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Question Prompt</label>
+                  <textarea class="form-textarea" id="prompt" rows="2" placeholder="What question do you want students to answer?"></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Code Snippet <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+                  <textarea class="form-textarea" id="code_snippet" rows="5"
+                    style="font-family:monospace;font-size:0.85rem;"
+                    placeholder="for i in range(1, 5):&#10;    print(i)"></textarea>
+                  <div class="form-hint">Students will see this code alongside the question prompt.</div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px;">
+                  <a href="teacher-questions.html" class="btn btn-ghost">Cancel</a>
+                  <button class="btn btn-primary btn-lg" id="saveBtn" onclick="save()">Save to Backend</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    async function save() {
+      const concept        = document.getElementById('concept').value.trim();
+      const prompt         = document.getElementById('prompt').value.trim();
+      const code_snippet   = document.getElementById('code_snippet').value.trim();
+      const correct_answer = document.getElementById('correct_answer').value.trim();
+      const alertBox = document.getElementById('alertBox');
+
+      if (!concept || !prompt || !correct_answer) {
+        alertBox.innerHTML = '<div class="alert alert-error">Concept, prompt, and correct answer are required.</div>';
+        return;
+      }
+
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;"></div> Saving…';
+
+      try {
+        const result = await apiPost('/questions', {
+          teacher_id:    getTeacherId(),
+          classroom_id:  getClassroomId(),
+          concept,
+          prompt,
+          code_snippet:  code_snippet || '',
+          correct_answer
+        });
+
+        // Auto-store as active question
+        setActiveQuestionId(result.question_id);
+
+        alertBox.innerHTML = `
+          <div class="alert alert-success">
+            ✓ Question saved! ID: <code style="font-weight:700;">${result.question_id}</code> — now set as the active question.
+            <a href="teacher-questions.html" style="color:inherit;font-weight:700;margin-left:8px;">View all →</a>
+          </div>`;
+
+        document.getElementById('concept').value = '';
+        document.getElementById('prompt').value = '';
+        document.getElementById('code_snippet').value = '';
+        document.getElementById('correct_answer').value = '';
+      } catch(e) {
+        alertBox.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save to Backend';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Sign In — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-left">
+      <div class="auth-brand">
+        <div class="auth-brand-logo"><img src="images/logo.png" alt="TeacherAId"/></div>
+        <div class="auth-brand-name">Teacher<span>AId</span></div>
+      </div>
+      <h2 class="auth-heading">Ready to learn?<br/>Let's get started.</h2>
+      <p class="auth-sub">Answer your teacher's questions, explain your reasoning, and get instant AI feedback on your thinking.</p>
+    </div>
+    <div class="auth-right">
+      <div class="auth-card animate-in">
+        <div class="auth-card-title">Student sign in</div>
+        <div class="auth-card-sub">Enter your details to begin</div>
+        <div id="alertBox"></div>
+        <div class="form-group">
+          <label class="form-label">Your name (Student ID)</label>
+          <input class="form-input" type="text" id="studentName" placeholder="Your full name" autocomplete="off"/>
+          <div class="form-hint">Use your real name — this is how your teacher tracks your progress.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Your teacher's name</label>
+          <input class="form-input" type="text" id="teacherName" placeholder="e.g. Ms. Johnson" autocomplete="off"/>
+          <div class="form-hint">Must match exactly how your teacher registered.</div>
+        </div>
+        <button class="btn btn-primary btn-lg w-full" onclick="register()" style="margin-top:4px;">Start Answering →</button>
+        <div class="auth-footer-link" style="margin-top:20px;">
+          Are you a teacher? <a href="teacher-registration.html">Teacher sign in</a>
+        </div>
+        <div class="auth-footer-link" style="margin-top:8px;">
+          <a href="index.html" style="color:var(--muted);">← Back to home</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script>
+    ['studentName','teacherName'].forEach(id =>
+      document.getElementById(id).addEventListener('keydown', e => { if(e.key==='Enter') register(); })
+    );
+
+    async function register() {
+      const name    = document.getElementById('studentName').value.trim();
+      const teacher = document.getElementById('teacherName').value.trim();
+      const alertBox = document.getElementById('alertBox');
+      alertBox.innerHTML = '';
+      if (!name || !teacher) {
+        alertBox.innerHTML = '<div class="alert alert-error">Please fill in both fields.</div>';
+        return;
+      }
+
+      // Verify backend is reachable and there's an active question
+      try {
+        const data = await apiGet('/questions');
+        if ((data.questions||[]).length === 0) {
+          alertBox.innerHTML = '<div class="alert alert-error">No questions available yet. Ask your teacher to create one first.</div>';
+          return;
+        }
+      } catch(e) {
+        alertBox.innerHTML = '<div class="alert alert-error">Cannot connect to backend. Ask your teacher to check the server.</div>';
+        return;
+      }
+
+      localStorage.setItem('currentStudent', name);
+      localStorage.setItem('currentTeacher', teacher);
+
+      // Derive and store classroomId for this student session
+      const cid = 'cls_' + teacher.toLowerCase().replace(/\s+/g,'_');
+      localStorage.setItem('currentClassroom', cid);
+
+      // Track student id on teacher side
+      const key = 'studentIds_' + teacher;
+      const ids  = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!ids.includes(name)) { ids.push(name); localStorage.setItem(key, JSON.stringify(ids)); }
+
+      window.location.href = 'student-questions.html';
+    }
+  </script>
+</body>
+</html>

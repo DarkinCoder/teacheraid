@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Students — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="app-layout" id="root"></div>
+
+  <!-- Student Detail Modal -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal-box" style="max-width:620px;">
+      <div class="modal-header">
+        <div class="modal-title" id="detailTitle">Student</div>
+        <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
+      </div>
+      <div class="modal-body" id="detailBody">
+        <div class="empty-state"><div class="spinner spinner-dark"></div></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('detailModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Class Analysis Modal -->
+  <div class="modal-overlay" id="analysisModal">
+    <div class="modal-box" style="max-width:640px;">
+      <div class="modal-header">
+        <div class="modal-title">📊 Class Analysis</div>
+        <button class="modal-close" onclick="closeModal('analysisModal')">✕</button>
+      </div>
+      <div class="modal-body" id="analysisBody">
+        <div class="empty-state"><div class="spinner spinner-dark"></div></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('analysisModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="sidebar.js"></script>
+  <script>
+    const classroomId = getClassroomId();
+
+    // We track student IDs in localStorage for the UI
+    function getStudentIds() {
+      return JSON.parse(localStorage.getItem('studentIds_' + getTeacherId()) || '[]');
+    }
+    function addStudentId(id) {
+      const ids = getStudentIds();
+      if (!ids.includes(id)) { ids.push(id); localStorage.setItem('studentIds_' + getTeacherId(), JSON.stringify(ids)); }
+    }
+
+    async function render() {
+      document.getElementById('root').innerHTML = buildSidebar('students') + `
+        <div class="main">
+          <div class="topbar">
+            <div>
+              <div class="topbar-title">Students</div>
+              <div class="topbar-sub" id="studentSub">Loading…</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost" onclick="openAnalysis()">📊 Class Analysis</button>
+            </div>
+          </div>
+          <div class="page-content animate-in" id="pageContent">
+            <div class="card"><div class="empty-state"><div class="spinner spinner-dark"></div><div class="empty-state-sub" style="margin-top:12px;">Loading…</div></div></div>
+          </div>
+        </div>`;
+
+      // Pull class memory from backend to discover student IDs
+      try {
+        const classData = await apiGet(`/memory/class/${classroomId}`);
+        const memories  = classData.memories || [];
+
+        // Collect all student IDs seen in class memory
+        memories.forEach(m => (m.students_affected||[]).forEach(sid => addStudentId(sid)));
+
+        const studentIds = getStudentIds();
+        document.getElementById('studentSub').textContent = `${studentIds.length} student${studentIds.length!==1?'s':''} · ${classroomId}`;
+
+        if (studentIds.length === 0) {
+          document.getElementById('pageContent').innerHTML = `
+            <div class="card">
+              <div class="empty-state">
+                <div class="empty-state-icon">👥</div>
+                <div class="empty-state-title">No students yet</div>
+                <div class="empty-state-sub">Students appear here automatically once they submit answers. Share your name with students so they can sign in.</div>
+              </div>
+            </div>`;
+          return;
+        }
+
+        // Build student cards from memory
+        const memByStudent = {};
+        memories.forEach(m => {
+          (m.students_affected||[]).forEach(sid => {
+            if (!memByStudent[sid]) memByStudent[sid] = [];
+            memByStudent[sid].push(m);
+          });
+        });
+
+        document.getElementById('pageContent').innerHTML = `
+          <div class="students-grid">
+            ${studentIds.map(sid => {
+              const mems = memByStudent[sid] || [];
+              const initials = sid.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+              const misconceptionCount = mems.length;
+              return `
+              <div class="student-card" onclick="openDetail('${escAttr(sid)}')">
+                <div class="s-avatar">${initials}</div>
+                <div class="s-name">${escHtml(sid)}</div>
+                <div class="s-meta">${misconceptionCount} misconception category${misconceptionCount!==1?'s':''}</div>
+                ${mems.some(m=>m.trend==='recurring'||m.trend==='persistent')
+                  ? `<div class="s-meta mt-1" style="color:var(--warn);">⚠️ Recurring issues</div>`:''}
+                <div class="s-submissions">View details →</div>
+              </div>`;
+            }).join('')}
+          </div>`;
+      } catch(e) {
+        document.getElementById('studentSub').textContent = 'Backend offline';
+        document.getElementById('pageContent').innerHTML = `
+          <div class="card">
+            <div class="empty-state">
+              <div class="empty-state-icon">⚠️</div>
+              <div class="empty-state-title">Backend unreachable</div>
+              <div class="empty-state-sub">Make sure the backend is running at ${API_BASE}</div>
+            </div>
+          </div>`;
+      }
+    }
+
+    async function openDetail(studentId) {
+      document.getElementById('detailTitle').textContent = studentId;
+      document.getElementById('detailBody').innerHTML = '<div class="empty-state"><div class="spinner spinner-dark"></div></div>';
+      openModal('detailModal');
+
+      try {
+        const [memData, insightData] = await Promise.all([
+          apiGet(`/memory/student/${studentId}`),
+          apiGet(`/insights/student/${studentId}`)
+        ]);
+
+        const memories     = memData.memories     || [];
+        const recurring    = insightData.recurring_misconceptions || [];
+        const interventions= insightData.suggested_interventions  || [];
+        const summary      = insightData.teacher_summary || '';
+
+        document.getElementById('detailBody').innerHTML = `
+          ${summary ? `<p class="text-sm" style="margin-bottom:16px;line-height:1.65;color:var(--text);">${escHtml(summary)}</p>` : ''}
+
+          ${recurring.length ? `
+            <div style="margin-bottom:16px;">
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Recurring Misconceptions</div>
+              ${recurring.map(r=>`
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;">
+                  <div>
+                    <div style="font-size:0.85rem;font-weight:500;">${escHtml(r.misconception||r.bug_category||'—')}</div>
+                    <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">Concept: ${escHtml(r.concept||'—')}</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="badge badge-red">${r.count}×</span>
+                    <span class="badge ${r.trend==='recurring'?'badge-yellow':'badge-gray'}">${escHtml(r.trend||'—')}</span>
+                  </div>
+                </div>`).join('')}
+            </div>` : ''}
+
+          ${memories.length ? `
+            <div style="margin-bottom:16px;">
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Memory Records</div>
+              ${memories.map(m=>`
+                <div style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span class="badge badge-blue">${escHtml(m.concept||'—')}</span>
+                    <span class="badge badge-gray">${escHtml(m.bug_category||'—')}</span>
+                  </div>
+                  <div style="font-size:0.85rem;font-weight:500;">${escHtml(m.misconception||'—')}</div>
+                  ${m.reasoning_patterns?.length ? `<div class="text-sm text-muted mt-1">${escHtml(m.reasoning_patterns[0])}</div>` : ''}
+                </div>`).join('')}
+            </div>` : ''}
+
+          ${interventions.length ? `
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Suggested Interventions</div>
+              ${interventions.map(r=>`<div style="padding:8px 12px;background:var(--accent-soft);border-radius:var(--radius-sm);margin-bottom:6px;font-size:0.85rem;">${escHtml(r)}</div>`).join('')}
+            </div>` : ''}
+
+          ${!summary && !recurring.length && !memories.length ? `
+            <div class="empty-state" style="padding:24px;">
+              <div class="empty-state-title">No data yet for this student</div>
+              <div class="empty-state-sub">Data will appear after the student submits answers.</div>
+            </div>` : ''}
+        `;
+      } catch(e) {
+        document.getElementById('detailBody').innerHTML = `<div class="alert alert-error">Failed to load student data: ${e.message}</div>`;
+      }
+    }
+
+    async function openAnalysis() {
+      document.getElementById('analysisBody').innerHTML = '<div class="empty-state"><div class="spinner spinner-dark"></div></div>';
+      openModal('analysisModal');
+
+      try {
+        const data = await apiGet(`/insights/class/${classroomId}`);
+        const top       = data.top_misconceptions       || [];
+        const reteach   = data.suggested_reteach_topics || [];
+        const summary   = data.teacher_summary          || '';
+
+        document.getElementById('analysisBody').innerHTML = `
+          ${summary ? `<p class="text-sm" style="margin-bottom:18px;line-height:1.65;">${escHtml(summary)}</p>` : ''}
+
+          ${top.length ? `
+            <div style="margin-bottom:18px;">
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Top Misconceptions</div>
+              ${top.map(m=>`
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;">
+                  <div>
+                    <div style="font-size:0.85rem;font-weight:500;">${escHtml(m.misconception||'—')}</div>
+                    <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">Concept: ${escHtml(m.concept||'—')}</div>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="badge badge-red">${m.count} student${m.count!==1?'s':''}</span>
+                    <span class="badge ${m.trend==='persistent'?'badge-yellow':'badge-gray'}">${escHtml(m.trend||'—')}</span>
+                  </div>
+                </div>`).join('')}
+            </div>` : ''}
+
+          ${reteach.length ? `
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Suggested Reteach Topics</div>
+              ${reteach.map(r=>`<div style="padding:8px 12px;background:var(--accent-soft);border-radius:var(--radius-sm);margin-bottom:6px;font-size:0.85rem;color:var(--text);">${escHtml(r)}</div>`).join('')}
+            </div>` : ''}
+
+          ${!top.length && !reteach.length && !summary ? `
+            <div class="empty-state" style="padding:24px;">
+              <div class="empty-state-icon">📊</div>
+              <div class="empty-state-title">No class data yet</div>
+              <div class="empty-state-sub">Class analysis appears here after students submit answers to the active question.</div>
+            </div>` : ''}
+        `;
+      } catch(e) {
+        document.getElementById('analysisBody').innerHTML = `<div class="alert alert-error">Failed to load class insights: ${e.message}</div>`;
+      }
+    }
+
+    function openModal(id)  { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+    render();
+  </script>
+</body>
+</html>

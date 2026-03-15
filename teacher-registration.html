@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Teacher Sign In — TeacherAId</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-left">
+      <div class="auth-brand">
+        <div class="auth-brand-logo">
+          <img src="images/logo.png" alt="TeacherAId"/>
+        </div>
+        <div class="auth-brand-name">Teacher<span>AId</span></div>
+      </div>
+      <h2 class="auth-heading">Understand your class.<br/>At a glance.</h2>
+      <p class="auth-sub">Generate targeted questions, analyze misconceptions, and track student progress — all powered by AI.</p>
+    </div>
+
+    <div class="auth-right">
+      <div class="auth-card animate-in">
+        <div class="auth-card-title">Teacher sign in</div>
+        <div class="auth-card-sub">Enter your name to access your dashboard</div>
+
+        <div id="alertBox"></div>
+
+        <div class="form-group">
+          <label class="form-label">Your name</label>
+          <input class="form-input" type="text" id="teacherName" placeholder="e.g. Ms. Johnson" autocomplete="off"/>
+        </div>
+
+        <button class="btn btn-primary btn-lg w-full" onclick="register()" style="margin-top:4px;">
+          Continue to Dashboard →
+        </button>
+
+        <div class="auth-footer-link" style="margin-top:20px;">
+          Not a teacher? <a href="student-registration.html">Student sign in</a>
+        </div>
+        <div class="auth-footer-link" style="margin-top:8px;">
+          <a href="index.html" style="color:var(--muted);">← Back to home</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('teacherName').addEventListener('keydown', e => {
+      if (e.key === 'Enter') register();
+    });
+
+    function register() {
+      const name = document.getElementById('teacherName').value.trim();
+      const alertBox = document.getElementById('alertBox');
+      if (!name) {
+        alertBox.innerHTML = '<div class="alert alert-error">Please enter your name.</div>';
+        return;
+      }
+      alertBox.innerHTML = '';
+      localStorage.setItem('teacherName', name);
+      if (!localStorage.getItem('students_' + name)) {
+        localStorage.setItem('students_' + name, JSON.stringify([]));
+      }
+      if (!localStorage.getItem('questions_' + name)) {
+        localStorage.setItem('questions_' + name, JSON.stringify([]));
+      }
+      if (!localStorage.getItem('feedbackHistory_' + name)) {
+        localStorage.setItem('feedbackHistory_' + name, JSON.stringify([]));
+      }
+      window.location.href = 'teacher-dashboard.html';
+    }
+  </script>
+</body>
+</html>
